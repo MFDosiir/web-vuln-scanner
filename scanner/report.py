@@ -78,6 +78,29 @@ def print_terminal_report(results: dict) -> None:
             print(f"      {f['description']}")
             print(f"      URL: {f['url']}\n")
 
+    # ── Reflected XSS ─────────────────────────────────────────────
+    xss = checks.get("xss", {})
+    if xss.get("status") == "error":
+        print(f"\n{RED}[!] XSS check failed: {xss['error']}{RESET}\n")
+    else:
+        s = xss.get("summary", {})
+        print(f"\n{BOLD}[ Reflected XSS ]{RESET}  "
+              f"Forms {s.get('forms_found', 0)}  ·  "
+              f"Fields tested {s.get('fields_tested', 0)}  ·  "
+              f"{RED}{s.get('vulnerable', 0)} vulnerable{RESET}\n")
+
+        xss_findings = xss.get("findings", [])
+        if not xss_findings:
+            print(f"  {GREEN}✔  No reflected XSS detected in tested fields.{RESET}")
+        else:
+            for f in xss_findings:
+                color = SEVERITY_COLOR.get(f["severity"], RED)
+                print(f"  {color}[{f['result']}]{RESET}  "
+                      f"{color}{f['severity']}{RESET}  "
+                      f"{f['field']} @ {f['form_action']}")
+                print(f"      {f['description']}")
+                print(f"      Payload: {f['payload']}\n")
+
     print(f"{'='*60}\n")
     print("NOTE: Only scan sites you own or have explicit permission to test.\n")
 
@@ -92,6 +115,7 @@ def save_html_report(results: dict) -> str:
     ts      = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     hdr     = checks.get("security_headers", {})
     exp     = checks.get("exposed_files", {})
+    xss     = checks.get("xss", {})
 
     def badge(text, color):
         colors = {"red": "#e74c3c", "green": "#2ecc71", "yellow": "#f39c12", "blue": "#3498db"}
@@ -140,8 +164,28 @@ def save_html_report(results: dict) -> str:
               <td style="font-size:0.85em;color:#c0ccd8">{f['description']}</td>
             </tr>"""
 
+    # Build XSS rows
+    xss_rows = ""
+    xss_findings = xss.get("findings", [])
+    if xss.get("status") == "error":
+        xss_rows = f'<tr><td colspan="5" style="color:#e74c3c;text-align:center;">Check failed: {xss["error"]}</td></tr>'
+    elif not xss_findings:
+        xss_rows = '<tr><td colspan="5" style="color:#2ecc71;text-align:center;">No reflected XSS detected ✔</td></tr>'
+    else:
+        for f in xss_findings:
+            sev_color = {"CRITICAL":"red","HIGH":"red","MEDIUM":"yellow","LOW":"blue"}.get(f["severity"],"blue")
+            xss_rows += f"""
+            <tr style="background:#1f1520;">
+              <td style="font-family:monospace;color:#d0dce8">{f['field']}</td>
+              <td style="font-family:monospace;font-size:0.85em;color:#d0dce8">{f['form_action']}</td>
+              <td>{badge(f['result'], 'red')}</td>
+              <td>{badge(f['severity'], sev_color)}</td>
+              <td style="font-size:0.85em;color:#c0ccd8">{f['description']}</td>
+            </tr>"""
+
     h_sum = hdr.get("summary", {})
     e_sum = exp.get("summary", {})
+    x_sum = xss.get("summary", {})
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -180,6 +224,7 @@ def save_html_report(results: dict) -> str:
     <div class="card"><div class="num">{h_sum.get('passed',0)}</div><div class="lbl">Headers Present</div></div>
     <div class="card"><div class="num" style="color:{'#e74c3c' if e_sum.get('exposed',0) > 0 else '#00d4aa'}">{e_sum.get('exposed',0)}</div><div class="lbl">Exposed Sensitive Files</div></div>
     <div class="card"><div class="num">{e_sum.get('paths_checked',0)}</div><div class="lbl">Paths Probed</div></div>
+    <div class="card"><div class="num" style="color:{'#e74c3c' if x_sum.get('vulnerable',0) > 0 else '#00d4aa'}">{x_sum.get('vulnerable',0)}</div><div class="lbl">Reflected XSS Findings</div></div>
   </div>
 
   <div class="warning">
@@ -200,6 +245,14 @@ def save_html_report(results: dict) -> str:
     <table>
       <thead><tr><th>Path</th><th>Result</th><th>Severity</th><th>Description</th></tr></thead>
       <tbody>{exp_rows}</tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Reflected XSS</h2>
+    <table>
+      <thead><tr><th>Field</th><th>Form Action</th><th>Result</th><th>Severity</th><th>Description</th></tr></thead>
+      <tbody>{xss_rows}</tbody>
     </table>
   </section>
 

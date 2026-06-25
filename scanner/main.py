@@ -7,6 +7,7 @@ import argparse
 import sys
 from .checks.headers import check_security_headers
 from .checks.exposed_files import check_exposed_files
+from .checks.xss import check_xss
 from .report import print_terminal_report, save_html_report
 
 
@@ -24,6 +25,9 @@ def run_scan(url: str) -> dict:
 
     print("[*] Checking for exposed sensitive files...")
     results["checks"]["exposed_files"] = check_exposed_files(url)
+
+    print("[*] Checking for reflected XSS...")
+    results["checks"]["xss"] = check_xss(url)
 
     return results
 
